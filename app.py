@@ -3,8 +3,16 @@ from pathlib import Path
 import json
 import pandas as pd
 
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
+
 
 DB = Path("trendpulse_data.json")
+
+YOUTUBE_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
 
 
 def load():
@@ -35,9 +43,7 @@ def get_google_trends():
         response = requests.get(
             url,
             timeout=15,
-            headers={
-                "User-Agent": "Mozilla/5.0"
-            }
+            headers={"User-Agent": "Mozilla/5.0"}
         )
 
         response.raise_for_status()
@@ -84,15 +90,51 @@ def create_trend_draft(topic, draft_id):
     }
 
 
-if "trendpulse_data" not in st.session_state:
+def create_youtube_flow():
+    client_config = {
+        "web": {
+            "client_id": st.secrets["youtube"]["client_id"],
+            "client_secret": st.secrets["youtube"]["client_secret"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        }
+    }
 
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=YOUTUBE_SCOPES
+    )
+
+    flow.redirect_uri = (
+        "https://8spy6syfwejab9zzb4sedh.streamlit.app"
+    )
+
+    return flow
+
+
+if "trendpulse_data" not in st.session_state:
     st.session_state.trendpulse_data = load()
 
 data = st.session_state.trendpulse_data
 
 
-if not data["drafts"]:
+if "youtube_connected" not in st.session_state:
+    st.session_state.youtube_connected = False
 
+
+if "youtube_channel" not in st.session_state:
+    st.session_state.youtube_channel = None
+
+
+if "oauth_state" not in st.session_state:
+    st.session_state.oauth_state = None
+
+
+if "youtube_credentials" not in st.session_state:
+    st.session_state.youtube_credentials = None
+
+
+if not data["drafts"]:
     data["drafts"] = [
         {
             "id": 1,
@@ -152,21 +194,12 @@ with approval_tab:
 
             st.subheader(draft["title"])
 
-            st.write(
-                "Niche:",
-                draft["niche"]
-            )
-
-            st.write(
-                "Status:",
-                draft["status"]
-            )
-
+            st.write("Niche:", draft["niche"])
+            st.write("Status:", draft["status"])
             st.write(
                 "Scheduled time:",
                 draft["scheduled_for"]
             )
-
             st.write(
                 "Copyright check:",
                 draft["copyright_check"]
@@ -336,22 +369,123 @@ with settings_tab:
 
     st.header("Settings")
 
-    st.write(
-        "Approval deadline: 08:00 SAST"
-    )
+    st.write("Approval deadline: 08:00 SAST")
+    st.write("Default publishing time: 20:00 SAST")
+    st.write("Publishing mode: Manual approval required")
+    st.write("Trend provider: Google Trends")
+    st.write("Channel: TrendPulse Daily")
 
-    st.write(
-        "Default publishing time: 20:00 SAST"
-    )
+    st.divider()
 
-    st.write(
-        "Publishing mode: Manual approval required"
-    )
+    st.subheader("YouTube connection")
 
-    st.write(
-        "Trend provider: Google Trends"
-    )
+    query_params = st.query_params
 
-    st.write(
-        "Channel: TrendPulse Daily"
-    )
+    if "code" in query_params:
+
+        try:
+
+            flow = create_youtube_flow()
+
+            if "state" in query_params:
+                flow.state = query_params["state"]
+
+            flow.fetch_token(
+                code=query_params["code"]
+            )
+
+            credentials = flow.credentials
+
+            youtube = build(
+                "youtube",
+                "v3",
+                credentials=credentials
+            )
+
+            channel_response = youtube.channels().list(
+                part="snippet",
+                mine=True
+            ).execute()
+
+            channels = channel_response.get(
+                "items",
+                []
+            )
+
+            if channels:
+
+                channel = channels[0]
+
+                st.session_state.youtube_credentials = credentials
+                st.session_state.youtube_connected = True
+                st.session_state.youtube_channel = (
+                    channel["snippet"]["title"]
+                )
+
+                st.query_params.clear()
+
+                st.success(
+                    "YouTube connected successfully."
+                )
+
+                st.rerun()
+
+            else:
+
+                st.error(
+                    "Google authentication succeeded, "
+                    "but no YouTube channel was found."
+                )
+
+        except Exception as error:
+
+            st.error(
+                f"YouTube connection failed: {error}"
+            )
+
+    if st.session_state.youtube_connected:
+
+        st.success("YouTube connected")
+
+        st.write(
+            "Channel:",
+            st.session_state.youtube_channel
+        )
+
+    else:
+
+        if st.button(
+            "CONNECT YOUTUBE",
+            key="connect_youtube"
+        ):
+
+            try:
+
+                flow = create_youtube_flow()
+
+                authorization_url, state = (
+                    flow.authorization_url(
+                        access_type="offline",
+                        include_granted_scopes="true",
+                        prompt="consent"
+                    )
+                )
+
+                st.session_state.oauth_state = state
+
+                st.link_button(
+                    "AUTHORIZE TRENPULSE DAILY ON GOOGLE",
+                    authorization_url
+                )
+
+                st.info(
+                    "Click the authorization button above "
+                    "and sign in with the Google account "
+                    "that owns your YouTube channel."
+                )
+
+            except Exception as error:
+
+                st.error(
+                    f"Could not start YouTube connection: {error}"
+                )
