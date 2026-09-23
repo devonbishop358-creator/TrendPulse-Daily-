@@ -1,5 +1,4 @@
 import streamlit as st
-from pytrends.request import TrendReq
 from pathlib import Path
 import json
 import pandas as pd
@@ -26,24 +25,35 @@ def save(data):
 
 def get_google_trends():
     try:
-        pytrends = TrendReq(
-            hl="en-ZA",
-            tz=120
+        import requests
+        import xml.etree.ElementTree as ET
+
+        url = "https://trends.google.com/trending/rss?geo=ZA"
+
+        response = requests.get(
+            url,
+            timeout=15,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            }
         )
 
-        trending = pytrends.trending_searches(
-            pn="south_africa"
-        )
+        response.raise_for_status()
+
+        root = ET.fromstring(response.text)
 
         topics = []
 
-        for topic in trending[0].head(10):
-            topics.append({
-                "Topic": str(topic),
-                "Niche": "Trending topics",
-                "Interest": "Live",
-                "Competition": "Unknown"
-            })
+        for item in root.findall(".//item")[:10]:
+            title = item.findtext("title")
+
+            if title:
+                topics.append({
+                    "Topic": title,
+                    "Niche": "Trending topics",
+                    "Interest": "Trending",
+                    "Competition": "Unknown"
+                })
 
         return topics
 
