@@ -63,12 +63,9 @@ def get_google_trends():
         return []
 
 
-data = load()
-
-
-def create_trend_draft(topic):
+def create_trend_draft(topic, draft_id):
     return {
-        "id": len(data["drafts"]) + 1,
+        "id": draft_id,
         "title": (
             f"{topic}: What South Africans "
             "Need to Know"
@@ -87,7 +84,15 @@ def create_trend_draft(topic):
     }
 
 
+if "trendpulse_data" not in st.session_state:
+
+    st.session_state.trendpulse_data = load()
+
+data = st.session_state.trendpulse_data
+
+
 if not data["drafts"]:
+
     data["drafts"] = [
         {
             "id": 1,
@@ -240,6 +245,8 @@ with trends_tab:
                 "Google Trends refreshed successfully."
             )
 
+            st.rerun()
+
         else:
 
             st.error(
@@ -261,9 +268,17 @@ with trends_tab:
             key="create_trend_draft"
         ):
 
+            next_id = max(
+                [draft["id"] for draft in data["drafts"]],
+                default=0
+            ) + 1
+
             top_topic = data["topics"][0]["Topic"]
 
-            new_draft = create_trend_draft(top_topic)
+            new_draft = create_trend_draft(
+                top_topic,
+                next_id
+            )
 
             data["drafts"].append(new_draft)
 
