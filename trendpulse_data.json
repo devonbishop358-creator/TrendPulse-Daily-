@@ -1,0 +1,15 @@
+{
+  "drafts": [
+    {
+      "id": 1,
+      "title": "Example TrendPulse Daily draft",
+      "niche": "Trending topics",
+      "status": "Approved \u2014 awaiting YouTube integration",
+      "scheduled_for": "20:00 SAST",
+      "copyright_check": "Pending",
+      "script": "Placeholder draft. Live trend research and rendering will be added in the next build."
+    }
+  ],
+  "topics": [],
+  "metrics": []
+}
