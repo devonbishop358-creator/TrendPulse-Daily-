@@ -3,12 +3,14 @@ from pathlib import Path
 import json
 import pandas as pd
 
+
 DB = Path("trendpulse_data.json")
 
 
 def load():
     if DB.exists():
         return json.loads(DB.read_text())
+
     return {
         "drafts": [],
         "topics": [],
@@ -64,6 +66,27 @@ def get_google_trends():
 data = load()
 
 
+def create_trend_draft(topic):
+    return {
+        "id": len(data["drafts"]) + 1,
+        "title": (
+            f"{topic}: What South Africans "
+            "Need to Know"
+        ),
+        "niche": "Trending topics",
+        "status": "Awaiting approval",
+        "scheduled_for": "20:00 SAST",
+        "copyright_check": "Pending",
+        "script": (
+            f"Today's trending topic is {topic}.\n\n"
+            f"In this video, we explore what {topic} "
+            "means, why people are discussing it, "
+            "and the key facts viewers should know.\n\n"
+            "This draft requires review before publishing."
+        )
+    }
+
+
 if not data["drafts"]:
     data["drafts"] = [
         {
@@ -74,8 +97,8 @@ if not data["drafts"]:
             "scheduled_for": "20:00 SAST",
             "copyright_check": "Pending",
             "script": (
-                "Placeholder draft. Live trend research "
-                "and rendering will be added in the next build."
+                "Placeholder draft. Select a live trend "
+                "to create a new video draft."
             )
         }
     ]
@@ -88,7 +111,9 @@ st.set_page_config(
     layout="wide"
 )
 
+
 st.title("TrendPulse Daily")
+
 
 st.caption(
     "Automated content control • "
@@ -228,6 +253,29 @@ with trends_tab:
             pd.DataFrame(data["topics"]),
             use_container_width=True
         )
+
+        st.subheader("Create video draft")
+
+        if st.button(
+            "CREATE DRAFT FROM TOP TREND",
+            key="create_trend_draft"
+        ):
+
+            top_topic = data["topics"][0]["Topic"]
+
+            new_draft = create_trend_draft(top_topic)
+
+            data["drafts"].append(new_draft)
+
+            save(data)
+
+            st.success(
+                f"Draft created for: {top_topic}"
+            )
+
+            st.info(
+                "Open the Approval Queue tab to review it."
+            )
 
     else:
 
