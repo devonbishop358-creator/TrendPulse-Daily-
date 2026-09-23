@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 from pathlib import Path
 import json
@@ -393,6 +392,7 @@ with settings_tab:
                 and returned_state
                 and returned_state != st.session_state.oauth_state
             ):
+
                 st.error(
                     "YouTube security check failed. "
                     "Please start the connection again."
@@ -432,7 +432,9 @@ with settings_tab:
                     channel = channels[0]
 
                     st.session_state.youtube_credentials = credentials
+
                     st.session_state.youtube_connected = True
+
                     st.session_state.youtube_channel = (
                         channel["snippet"]["title"]
                     )
@@ -506,4 +508,3 @@ with settings_tab:
                 st.error(
                     f"Could not start YouTube connection: {error}"
                 )
-```
