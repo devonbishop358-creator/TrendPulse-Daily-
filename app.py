@@ -2,7 +2,6 @@ import streamlit as st
 from pathlib import Path
 import json
 import pandas as pd
-import secrets
 
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -106,14 +105,19 @@ def create_youtube_flow():
         "web": {
             "client_id": st.secrets["youtube"]["client_id"],
             "client_secret": st.secrets["youtube"]["client_secret"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token"
+            "auth_uri": (
+                "https://accounts.google.com/o/oauth2/auth"
+            ),
+            "token_uri": (
+                "https://oauth2.googleapis.com/token"
+            )
         }
     }
 
     flow = Flow.from_client_config(
         client_config,
-        scopes=YOUTUBE_SCOPES
+        scopes=YOUTUBE_SCOPES,
+        autogenerate_code_verifier=False
     )
 
     flow.redirect_uri = REDIRECT_URI
@@ -123,6 +127,7 @@ def create_youtube_flow():
 
 if "trendpulse_data" not in st.session_state:
     st.session_state.trendpulse_data = load()
+
 
 data = st.session_state.trendpulse_data
 
@@ -135,19 +140,12 @@ if "youtube_channel" not in st.session_state:
     st.session_state.youtube_channel = None
 
 
-if "oauth_state" not in st.session_state:
-    st.session_state.oauth_state = None
-
-
 if "youtube_credentials" not in st.session_state:
     st.session_state.youtube_credentials = None
 
 
-if "oauth_code_verifier" not in st.session_state:
-    st.session_state.oauth_code_verifier = None
-
-
 if not data["drafts"]:
+
     data["drafts"] = [
         {
             "id": 1,
@@ -203,10 +201,12 @@ with approval_tab:
 
             st.write("Niche:", draft["niche"])
             st.write("Status:", draft["status"])
+
             st.write(
                 "Scheduled time:",
                 draft["scheduled_for"]
             )
+
             st.write(
                 "Copyright check:",
                 draft["copyright_check"]
@@ -309,7 +309,10 @@ with trends_tab:
         ):
 
             next_id = max(
-                [draft["id"] for draft in data["drafts"]],
+                [
+                    draft["id"]
+                    for draft in data["drafts"]
+                ],
                 default=0
             ) + 1
 
@@ -392,17 +395,7 @@ with settings_tab:
 
         try:
 
-            returned_state = query_params.get("state")
-
             flow = create_youtube_flow()
-
-            if st.session_state.oauth_code_verifier:
-                flow.code_verifier = (
-                    st.session_state.oauth_code_verifier
-                )
-
-            if returned_state:
-                flow.state = returned_state
 
             flow.fetch_token(
                 code=query_params["code"]
@@ -416,10 +409,14 @@ with settings_tab:
                 credentials=credentials
             )
 
-            channel_response = youtube.channels().list(
-                part="snippet",
-                mine=True
-            ).execute()
+            channel_response = (
+                youtube.channels()
+                .list(
+                    part="snippet",
+                    mine=True
+                )
+                .execute()
+            )
 
             channels = channel_response.get(
                 "items",
@@ -430,16 +427,15 @@ with settings_tab:
 
                 channel = channels[0]
 
-                st.session_state.youtube_credentials = credentials
+                st.session_state.youtube_credentials = (
+                    credentials
+                )
 
                 st.session_state.youtube_connected = True
 
                 st.session_state.youtube_channel = (
                     channel["snippet"]["title"]
                 )
-
-                st.session_state.oauth_state = None
-                st.session_state.oauth_code_verifier = None
 
                 st.query_params.clear()
 
@@ -461,6 +457,7 @@ with settings_tab:
             st.error(
                 f"YouTube connection failed: {error}"
             )
+
 
     if st.session_state.youtube_connected:
 
@@ -488,12 +485,6 @@ with settings_tab:
                         include_granted_scopes="true",
                         prompt="consent"
                     )
-                )
-
-                st.session_state.oauth_state = state
-
-                st.session_state.oauth_code_verifier = (
-                    flow.code_verifier
                 )
 
                 st.link_button(
