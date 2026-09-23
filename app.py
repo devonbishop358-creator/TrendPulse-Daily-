@@ -2,6 +2,8 @@ import streamlit as st
 from pathlib import Path
 import json
 import pandas as pd
+import requests
+import xml.etree.ElementTree as ET
 from datetime import datetime
 
 # ============================================================
@@ -16,6 +18,8 @@ st.set_page_config(
 
 DATA_FILE = Path("trendpulse_data.json")
 
+GOOGLE_TRENDS_RSS = "https://trends.google.com/trending/rss?geo=ZA"
+
 
 # ============================================================
 # DATA FUNCTIONS
@@ -23,6 +27,7 @@ DATA_FILE = Path("trendpulse_data.json")
 
 def load_database():
     """Load the complete TrendPulse database."""
+
     if not DATA_FILE.exists():
         return {
             "drafts": [],
@@ -31,7 +36,9 @@ def load_database():
         }
 
     try:
-        raw = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+        raw = json.loads(
+            DATA_FILE.read_text(encoding="utf-8")
+        )
 
         if isinstance(raw, dict):
             return {
@@ -40,7 +47,6 @@ def load_database():
                 "metrics": raw.get("metrics", [])
             }
 
-        # Compatibility with older list-only versions
         if isinstance(raw, list):
             return {
                 "drafts": raw,
@@ -48,22 +54,19 @@ def load_database():
                 "metrics": []
             }
 
-        return {
-            "drafts": [],
-            "topics": [],
-            "metrics": []
-        }
-
     except Exception:
-        return {
-            "drafts": [],
-            "topics": [],
-            "metrics": []
-        }
+        pass
+
+    return {
+        "drafts": [],
+        "topics": [],
+        "metrics": []
+    }
 
 
 def save_database(database):
-    """Save the complete TrendPulse database."""
+    """Save TrendPulse database."""
+
     DATA_FILE.write_text(
         json.dumps(
             database,
@@ -76,6 +79,7 @@ def save_database(database):
 
 def get_title(item):
     """Safely obtain a draft title."""
+
     if not isinstance(item, dict):
         return "Untitled trend"
 
@@ -89,6 +93,7 @@ def get_title(item):
 
 def get_status(item):
     """Safely obtain draft status."""
+
     if not isinstance(item, dict):
         return "Draft"
 
@@ -96,48 +101,181 @@ def get_status(item):
 
 
 # ============================================================
+# GOOGLE TRENDS
+# ============================================================
+
+def fetch_google_trends():
+    """
+    Fetch current Google Trends RSS results for South Africa.
+    """
+
+    try:
+        response = requests.get(
+            GOOGLE_TRENDS_RSS,
+            timeout=20,
+            headers={
+                "User-Agent": "TrendPulse Daily/1.0"
+            }
+        )
+
+        response.raise_for_status()
+
+        root = ET.fromstring(response.content)
+
+        items = []
+
+        for item in root.findall(".//item"):
+
+            title_element = item.find("title")
+            pubdate_element = item.find("pubDate")
+            traffic_element = item.find(
+                "{https://trends.google.com/trending/rss}approx_traffic"
+            )
+
+            title = (
+                title_element.text.strip()
+                if title_element is not None
+                and title_element.text
+                else ""
+            )
+
+            pubdate = (
+                pubdate_element.text.strip()
+                if pubdate_element is not None
+                and pubdate_element.text
+                else ""
+            )
+
+            traffic = (
+                traffic_element.text.strip()
+                if traffic_element is not None
+                and traffic_element.text
+                else ""
+            )
+
+            if title:
+                items.append(
+                    {
+                        "title": title,
+                        "traffic": traffic,
+                        "published": pubdate,
+                        "source": "Google Trends"
+                    }
+                )
+
+        return items
+
+    except Exception as error:
+
+        st.error(
+            f"Could not load Google Trends: {error}"
+        )
+
+        return []
+
+
+# ============================================================
+# ADD REAL TRENDS TO DATABASE
+# ============================================================
+
+def import_google_trends(database):
+    """Import new Google Trends topics without duplicates."""
+
+    live_trends = fetch_google_trends()
+
+    if not live_trends:
+        return 0
+
+    existing_titles = {
+        get_title(item).strip().lower()
+        for item in database["drafts"]
+        if isinstance(item, dict)
+    }
+
+    added = 0
+
+    for trend in live_trends[:10]:
+
+        title = trend["title"]
+
+        if title.strip().lower() in existing_titles:
+            continue
+
+        draft = {
+            "id": len(database["drafts"]) + 1,
+            "title": title,
+            "niche": "Trending topics",
+            "status": "Draft",
+            "scheduled_for": "",
+            "copyright_check": "Pending",
+            "source": "Google Trends",
+            "traffic": trend.get("traffic", ""),
+            "published": trend.get("published", ""),
+            "script": ""
+        }
+
+        database["drafts"].append(draft)
+
+        existing_titles.add(
+            title.strip().lower()
+        )
+
+        added += 1
+
+    save_database(database)
+
+    return added
+
+
+# ============================================================
+# FREE SCRIPT GENERATOR
+# ============================================================
+
+def create_script(item):
+
+    title = get_title(item)
+
+    return f"""
+Today we are looking at {title}.
+
+This topic is currently appearing among trending searches
+on Google Trends in South Africa.
+
+In this video, we will explain what {title} is, why people
+are searching for it, and the important information viewers
+should know.
+
+We will look at the key details surrounding the topic and
+provide useful context so that the story is easier to understand.
+
+Because trending stories can develop quickly, viewers should
+check the latest information before relying on details that
+may change.
+
+That is today's TrendPulse Daily update on {title}.
+
+Follow TrendPulse Daily for more daily trend updates.
+""".strip()
+
+
+# ============================================================
 # FREE CAPCUT PRODUCTION PACK
 # ============================================================
 
 def create_production_pack(item):
-    """Create a free text production pack for CapCut."""
 
     title = get_title(item)
 
-    if not isinstance(item, dict):
-        item = {}
+    description = (
+        f"TrendPulse Daily explains what is happening with "
+        f"{title}, why people are searching for it, and what "
+        f"viewers should know."
+    )
 
-    description = item.get("description", "")
-    source = item.get("source", "TrendPulse Daily")
-    original_script = item.get("script", "")
+    script = item.get("script", "")
 
-    if not description:
-        description = (
-            f"TrendPulse Daily explains what is happening with "
-            f"{title}, why people are paying attention, and what "
-            f"viewers should know."
-        )
-
-    if not original_script or "Placeholder draft" in original_script:
-        original_script = f"""
-Today we are looking at {title}.
-
-This topic has attracted attention through TrendPulse Daily's
-trend monitoring.
-
-In this video, we explain what the topic is, what has happened,
-why people are discussing it, and what viewers should know.
-
-We will also look at the important background and the key points
-that help put the story into context.
-
-As with any developing story, viewers should check the latest
-information because details can change.
-
-That is the TrendPulse Daily update on {title}.
-
-Follow TrendPulse Daily for more daily trend updates.
-""".strip()
+    if not script:
+        script = create_script(item)
 
     pack = f"""
 ============================================================
@@ -147,6 +285,9 @@ TRENDPULSE DAILY — FREE CAPCUT PRODUCTION PACK
 VIDEO TOPIC
 {title}
 
+SOURCE
+Google Trends — South Africa
+
 FORMAT
 16:9 YouTube video
 Target length: 3–6 minutes
@@ -155,7 +296,7 @@ Target length: 3–6 minutes
 NARRATION SCRIPT
 ============================================================
 
-{original_script}
+{script}
 
 ============================================================
 CAPCUT SCENE PLAN
@@ -181,7 +322,7 @@ Visual:
 Use relevant stock footage, photographs, screenshots or graphics.
 
 Narration:
-Explain what is happening and why the topic is attracting attention.
+Explain what is happening and why people are searching for it.
 
 
 SCENE 3 — KEY DETAILS
@@ -202,7 +343,7 @@ Show people, locations, products, events or other visuals
 connected with the topic.
 
 Narration:
-Explain why viewers should care about the story.
+Explain why viewers may be interested in the story.
 
 
 SCENE 5 — SUMMARY
@@ -248,15 +389,15 @@ Subscribe for daily trend updates and easy-to-understand
 explanations.
 
 SOURCE
-{source}
+Google Trends — South Africa
 
 HASHTAGS
 
 #TrendPulseDaily
+#GoogleTrends
 #Trending
-#News
-#Explained
-#DailyUpdate
+#TrendingNow
+#SouthAfrica
 
 ============================================================
 CAPCUT CHECKLIST
@@ -270,6 +411,7 @@ CAPCUT CHECKLIST
 [ ] Add background music if appropriate
 [ ] Add TrendPulse Daily branding
 [ ] Check spelling and facts
+[ ] Verify the latest information
 [ ] Watch the complete video
 [ ] Export at 1080p
 [ ] Upload to YouTube
@@ -298,9 +440,43 @@ metrics = database["metrics"]
 # ============================================================
 
 st.title("📈 TrendPulse Daily")
+
 st.caption(
     "Daily trend discovery, approval and free video production workflow"
 )
+
+
+# ============================================================
+# LIVE GOOGLE TRENDS BUTTON
+# ============================================================
+
+st.subheader("🇿🇦 South Africa Google Trends")
+
+st.write(
+    "Import the latest trending searches from Google Trends."
+)
+
+if st.button(
+    "🔄 GET LATEST GOOGLE TRENDS",
+    width="stretch"
+):
+
+    added = import_google_trends(database)
+
+    if added > 0:
+
+        st.success(
+            f"{added} new trending topic(s) imported."
+        )
+
+        st.rerun()
+
+    else:
+
+        st.info(
+            "No new trends were added. "
+            "Existing trends may already be in the database."
+        )
 
 
 # ============================================================
@@ -326,7 +502,11 @@ with approval_tab:
     st.header("Approval Queue")
 
     if not drafts:
-        st.info("No trend drafts available.")
+
+        st.info(
+            "No trend drafts available. "
+            "Click GET LATEST GOOGLE TRENDS above."
+        )
 
     else:
 
@@ -359,11 +539,16 @@ with approval_tab:
                     ):
 
                         item["status"] = "Approved"
-                        item["approved_at"] = datetime.now().isoformat()
+                        item["approved_at"] = (
+                            datetime.now().isoformat()
+                        )
 
                         save_database(database)
 
-                        st.success("Trend approved.")
+                        st.success(
+                            "Trend approved."
+                        )
+
                         st.rerun()
 
                 # ------------------------------------------------
@@ -382,11 +567,14 @@ with approval_tab:
 
                         save_database(database)
 
-                        st.warning("Trend rejected.")
+                        st.warning(
+                            "Trend rejected."
+                        )
+
                         st.rerun()
 
                 # ------------------------------------------------
-                # PRODUCTION PACK
+                # CAPCUT PACK
                 # ------------------------------------------------
 
                 with col3:
@@ -396,6 +584,12 @@ with approval_tab:
                         key=f"pack_{index}",
                         width="stretch"
                     ):
+
+                        if not item.get("script"):
+
+                            item["script"] = create_script(item)
+
+                            save_database(database)
 
                         pack = create_production_pack(item)
 
@@ -408,7 +602,7 @@ with approval_tab:
                         )
 
                 # ------------------------------------------------
-                # SHOW DOWNLOAD
+                # DOWNLOAD PACK
                 # ------------------------------------------------
 
                 pack_key = f"production_pack_{index}"
@@ -416,9 +610,15 @@ with approval_tab:
                 if pack_key in st.session_state:
 
                     st.download_button(
-                        "DOWNLOAD VIDEO PRODUCTION PACK",
+                        "⬇️ DOWNLOAD VIDEO PRODUCTION PACK",
                         data=st.session_state[pack_key],
-                        file_name="trendpulse_video_pack.txt",
+                        file_name=(
+                            "trendpulse_"
+                            + title[:40]
+                            .replace(" ", "_")
+                            .replace("/", "_")
+                            + "_production_pack.txt"
+                        ),
                         mime="text/plain",
                         key=f"download_pack_{index}",
                         width="stretch"
@@ -427,7 +627,7 @@ with approval_tab:
                     st.text_area(
                         "Production pack preview",
                         st.session_state[pack_key],
-                        height=400,
+                        height=500,
                         key=f"preview_pack_{index}"
                     )
 
@@ -438,11 +638,13 @@ with approval_tab:
 
 with trends_tab:
 
-    st.header("Trends")
+    st.header("Live Trends")
 
     if not drafts:
 
-        st.info("No trends available yet.")
+        st.info(
+            "No trends available yet."
+        )
 
     else:
 
@@ -460,6 +662,14 @@ with trends_tab:
                     "Source": item.get(
                         "source",
                         "Google Trends"
+                    ),
+                    "Traffic": item.get(
+                        "traffic",
+                        ""
+                    ),
+                    "Published": item.get(
+                        "published",
+                        ""
                     )
                 }
             )
@@ -473,7 +683,9 @@ with trends_tab:
 
         else:
 
-            st.info("No valid trend records found.")
+            st.info(
+                "No valid trend records found."
+            )
 
 
 # ============================================================
@@ -484,34 +696,38 @@ with analytics_tab:
 
     st.header("Analytics")
 
-    total = len(
-        [
-            item for item in drafts
-            if isinstance(item, dict)
-        ]
-    )
+    valid_drafts = [
+        item for item in drafts
+        if isinstance(item, dict)
+    ]
+
+    total = len(valid_drafts)
 
     approved = len(
         [
-            item for item in drafts
-            if isinstance(item, dict)
-            and item.get("status") == "Approved"
+            item for item in valid_drafts
+            if item.get("status") == "Approved"
         ]
     )
 
     rejected = len(
         [
-            item for item in drafts
-            if isinstance(item, dict)
-            and item.get("status") == "Rejected"
+            item for item in valid_drafts
+            if item.get("status") == "Rejected"
+        ]
+    )
+
+    draft_count = len(
+        [
+            item for item in valid_drafts
+            if item.get("status") == "Draft"
         ]
     )
 
     awaiting_youtube = len(
         [
-            item for item in drafts
-            if isinstance(item, dict)
-            and "awaiting YouTube" in item.get(
+            item for item in valid_drafts
+            if "awaiting YouTube" in item.get(
                 "status",
                 ""
             )
@@ -521,23 +737,27 @@ with analytics_tab:
     col1, col2, col3, col4 = st.columns(4)
 
     col1.metric(
-        "Total drafts",
+        "Total trends",
         total
     )
 
     col2.metric(
-        "Approved",
-        approved
+        "New drafts",
+        draft_count
     )
 
     col3.metric(
-        "Rejected",
-        rejected
+        "Approved",
+        approved
     )
 
     col4.metric(
         "Awaiting YouTube",
         awaiting_youtube
+    )
+
+    st.write(
+        f"Rejected trends: {rejected}"
     )
 
 
@@ -549,19 +769,25 @@ with settings_tab:
 
     st.header("Settings")
 
+    st.subheader("Trend source")
+
+    st.write(
+        "Google Trends — South Africa"
+    )
+
+    st.write(
+        "The app reads the Google Trends RSS feed for South Africa."
+    )
+
     st.subheader("Video workflow")
 
     st.write(
-        "TrendPulse Daily currently uses a free production workflow."
-    )
-
-    st.write(
-        "The app prepares the topic, narration, scene plan and "
-        "YouTube metadata for production in CapCut."
+        "Google Trends → TrendPulse → Approval → "
+        "Free CapCut Production Pack → CapCut → YouTube"
     )
 
     st.success(
-        "No paid OpenAI video-generation API is used by this version."
+        "This workflow does not use paid OpenAI video generation."
     )
 
     st.subheader("Video format")
@@ -583,4 +809,8 @@ with settings_tab:
 
     st.write(
         f"Metrics stored: {len(metrics)}"
+    )
+
+    st.caption(
+        "Google Trends data should be attributed to Google when reused."
     )
