@@ -2,6 +2,7 @@ import streamlit as st
 from pathlib import Path
 import json
 import pandas as pd
+import secrets
 
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -19,6 +20,10 @@ YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
 ]
+
+REDIRECT_URI = (
+    "https://8spy6syfwejab9zzb4sedh.streamlit.app"
+)
 
 
 def load():
@@ -111,9 +116,7 @@ def create_youtube_flow():
         scopes=YOUTUBE_SCOPES
     )
 
-    flow.redirect_uri = (
-        "https://8spy6syfwejab9zzb4sedh.streamlit.app"
-    )
+    flow.redirect_uri = REDIRECT_URI
 
     return flow
 
@@ -138,6 +141,10 @@ if "oauth_state" not in st.session_state:
 
 if "youtube_credentials" not in st.session_state:
     st.session_state.youtube_credentials = None
+
+
+if "oauth_code_verifier" not in st.session_state:
+    st.session_state.oauth_code_verifier = None
 
 
 if not data["drafts"]:
@@ -387,74 +394,67 @@ with settings_tab:
 
             returned_state = query_params.get("state")
 
-            if (
-                st.session_state.oauth_state
-                and returned_state
-                and returned_state != st.session_state.oauth_state
-            ):
+            flow = create_youtube_flow()
 
-                st.error(
-                    "YouTube security check failed. "
-                    "Please start the connection again."
+            if st.session_state.oauth_code_verifier:
+                flow.code_verifier = (
+                    st.session_state.oauth_code_verifier
                 )
+
+            if returned_state:
+                flow.state = returned_state
+
+            flow.fetch_token(
+                code=query_params["code"]
+            )
+
+            credentials = flow.credentials
+
+            youtube = build(
+                "youtube",
+                "v3",
+                credentials=credentials
+            )
+
+            channel_response = youtube.channels().list(
+                part="snippet",
+                mine=True
+            ).execute()
+
+            channels = channel_response.get(
+                "items",
+                []
+            )
+
+            if channels:
+
+                channel = channels[0]
+
+                st.session_state.youtube_credentials = credentials
+
+                st.session_state.youtube_connected = True
+
+                st.session_state.youtube_channel = (
+                    channel["snippet"]["title"]
+                )
+
+                st.session_state.oauth_state = None
+                st.session_state.oauth_code_verifier = None
+
+                st.query_params.clear()
+
+                st.success(
+                    "YouTube connected successfully."
+                )
+
+                st.rerun()
 
             else:
 
-                flow = create_youtube_flow()
-
-                if returned_state:
-                    flow.state = returned_state
-
-                flow.fetch_token(
-                    code=query_params["code"]
+                st.error(
+                    "Google authentication succeeded, "
+                    "but no YouTube channel was found."
                 )
-
-                credentials = flow.credentials
-
-                youtube = build(
-                    "youtube",
-                    "v3",
-                    credentials=credentials
-                )
-
-                channel_response = youtube.channels().list(
-                    part="snippet",
-                    mine=True
-                ).execute()
-
-                channels = channel_response.get(
-                    "items",
-                    []
-                )
-
-                if channels:
-
-                    channel = channels[0]
-
-                    st.session_state.youtube_credentials = credentials
-
-                    st.session_state.youtube_connected = True
-
-                    st.session_state.youtube_channel = (
-                        channel["snippet"]["title"]
-                    )
-
-                    st.session_state.oauth_state = None
-
-                    st.query_params.clear()
-
-                    st.success(
-                        "YouTube connected successfully."
-                    )
-
-                    st.rerun()
-
-                else:
-
-                    st.error(
-                        "Google authentication succeeded, "
-                        "but no YouTube channel was found."
-                    )
 
         except Exception as error:
 
@@ -491,6 +491,10 @@ with settings_tab:
                 )
 
                 st.session_state.oauth_state = state
+
+                st.session_state.oauth_code_verifier = (
+                    flow.code_verifier
+                )
 
                 st.link_button(
                     "AUTHORIZE TRENDPULSE DAILY ON GOOGLE",
