@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 from pathlib import Path
 import json
@@ -5,6 +6,12 @@ import pandas as pd
 
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+
+
+st.set_page_config(
+    page_title="TrendPulse Daily",
+    layout="wide"
+)
 
 
 DB = Path("trendpulse_data.json")
@@ -106,7 +113,7 @@ def create_youtube_flow():
     )
 
     flow.redirect_uri = (
-        "https://8spy6syfwejab9zzb4sedh.streamlit.app/oauth2callback"
+        "https://8spy6syfwejab9zzb4sedh.streamlit.app"
     )
 
     return flow
@@ -151,12 +158,6 @@ if not data["drafts"]:
     ]
 
     save(data)
-
-
-st.set_page_config(
-    page_title="TrendPulse Daily",
-    layout="wide"
-)
 
 
 st.title("TrendPulse Daily")
@@ -385,57 +386,73 @@ with settings_tab:
 
         try:
 
-            flow = create_youtube_flow()
+            returned_state = query_params.get("state")
 
-            if "state" in query_params:
-                flow.state = query_params["state"]
-
-            flow.fetch_token(
-                code=query_params["code"]
-            )
-
-            credentials = flow.credentials
-
-            youtube = build(
-                "youtube",
-                "v3",
-                credentials=credentials
-            )
-
-            channel_response = youtube.channels().list(
-                part="snippet",
-                mine=True
-            ).execute()
-
-            channels = channel_response.get(
-                "items",
-                []
-            )
-
-            if channels:
-
-                channel = channels[0]
-
-                st.session_state.youtube_credentials = credentials
-                st.session_state.youtube_connected = True
-                st.session_state.youtube_channel = (
-                    channel["snippet"]["title"]
+            if (
+                st.session_state.oauth_state
+                and returned_state
+                and returned_state != st.session_state.oauth_state
+            ):
+                st.error(
+                    "YouTube security check failed. "
+                    "Please start the connection again."
                 )
-
-                st.query_params.clear()
-
-                st.success(
-                    "YouTube connected successfully."
-                )
-
-                st.rerun()
 
             else:
 
-                st.error(
-                    "Google authentication succeeded, "
-                    "but no YouTube channel was found."
+                flow = create_youtube_flow()
+
+                if returned_state:
+                    flow.state = returned_state
+
+                flow.fetch_token(
+                    code=query_params["code"]
                 )
+
+                credentials = flow.credentials
+
+                youtube = build(
+                    "youtube",
+                    "v3",
+                    credentials=credentials
+                )
+
+                channel_response = youtube.channels().list(
+                    part="snippet",
+                    mine=True
+                ).execute()
+
+                channels = channel_response.get(
+                    "items",
+                    []
+                )
+
+                if channels:
+
+                    channel = channels[0]
+
+                    st.session_state.youtube_credentials = credentials
+                    st.session_state.youtube_connected = True
+                    st.session_state.youtube_channel = (
+                        channel["snippet"]["title"]
+                    )
+
+                    st.session_state.oauth_state = None
+
+                    st.query_params.clear()
+
+                    st.success(
+                        "YouTube connected successfully."
+                    )
+
+                    st.rerun()
+
+                else:
+
+                    st.error(
+                        "Google authentication succeeded, "
+                        "but no YouTube channel was found."
+                    )
 
         except Exception as error:
 
@@ -489,3 +506,4 @@ with settings_tab:
                 st.error(
                     f"Could not start YouTube connection: {error}"
                 )
+```
