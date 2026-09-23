@@ -106,7 +106,7 @@ def create_youtube_flow():
     )
 
     flow.redirect_uri = (
-        "https://8spy6syfwejab9zzb4sedh.streamlit.app"
+        "https://8spy6syfwejab9zzb4sedh.streamlit.app/oauth2callback"
     )
 
     return flow
@@ -474,7 +474,7 @@ with settings_tab:
                 st.session_state.oauth_state = state
 
                 st.link_button(
-                    "AUTHORIZE TRENPULSE DAILY ON GOOGLE",
+                    "AUTHORIZE TRENDPULSE DAILY ON GOOGLE",
                     authorization_url
                 )
 
