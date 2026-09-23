@@ -1,3 +1,5 @@
 streamlit>=1.36
 pandas>=2.0
 pytrends>=4.9.2
+google-auth-oauthlib
+google-api-python-client
