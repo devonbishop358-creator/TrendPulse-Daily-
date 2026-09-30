@@ -4,7 +4,6 @@ import json
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime
-import pickle
 
 st.set_page_config(page_title="TrendPulse Daily", page_icon="📈", layout="wide")
 
@@ -12,11 +11,9 @@ BASE_DIR = Path(__file__).resolve().parent
 DB = BASE_DIR / "trendpulse_data.json"
 VIDEO_DIR = BASE_DIR / "trendpulse_videos"
 AUDIO_DIR = BASE_DIR / "trendpulse_audio"
-CREDS_DIR = BASE_DIR / "creds"
 
 VIDEO_DIR.mkdir(exist_ok=True)
 AUDIO_DIR.mkdir(exist_ok=True)
-CREDS_DIR.mkdir(exist_ok=True)
 
 def load():
     if not DB.exists():
@@ -36,8 +33,6 @@ def load():
             draft.setdefault("created", "")
             draft.setdefault("audio", "")
             draft.setdefault("video", "")
-            draft.setdefault("youtube_url", "")
-            draft.setdefault("youtube_video_id", "")
         return data
     except Exception:
         return {"drafts": [], "topics": []}
@@ -82,9 +77,7 @@ def create_draft(topic):
         "status": "Awaiting approval",
         "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "audio": "",
-        "video": "",
-        "youtube_url": "",
-        "youtube_video_id": ""
+        "video": ""
     }
     data["drafts"].append(draft)
     save(data)
@@ -128,29 +121,12 @@ with tab1:
                     st.rerun()
             elif status == "Approved":
                 st.success("✅ Approved!")
-                video_path = draft.get("video", "")
-                if video_path and Path(video_path).exists():
-                    st.video(video_path)
-                    st.download_button("⬇️ Download Video", data=Path(video_path).read_bytes(), file_name=Path(video_path).name, mime="video/mp4", key=f"dl_{draft['id']}")
-                
-                st.divider()
-                st.subheader("🎬 Upload to YouTube")
-                yt_title = st.text_input("YouTube Title", value=topic, key=f"yt_title_{draft['id']}")
-                yt_desc = st.text_area("YouTube Description", value=f"Trending in South Africa: {topic}", height=100, key=f"yt_desc_{draft['id']}")
-                yt_tags = st.text_input("Tags (comma-separated)", value="trending,south africa,news", key=f"yt_tags_{draft['id']}")
-                
-                if st.button("🚀 UPLOAD TO YOUTUBE", key=f"upload_{draft['id']}"):
-                    if not video_path or not Path(video_path).exists():
-                        st.error("No video file found!")
-                    else:
-                        st.info("Uploading to YouTube...")
-                        st.warning("Note: YouTube upload requires OAuth credentials. See Settings tab.")
             elif status == "Rejected":
                 st.error("❌ Rejected!")
 
 with tab2:
     st.header("🇿🇦 South Africa Google Trends")
-    st.write("Import the latest trending searches from Google Trends into your Approval Queue.")
+    st.write("Import the latest trending searches from Google Trends.")
     
     if st.button("🔄 REFRESH GOOGLE TRENDS"):
         trends = get_trends()
@@ -170,3 +146,30 @@ with tab2:
             st.rerun()
         st.subheader("Current Trends")
         for i, topic in enumerate(trends, 1):
+            st.write(f"{i}. {topic}")
+    else:
+        st.info("Click refresh to load trends.")
+
+with tab3:
+    st.header("📊 Analytics")
+    drafts = data.get("drafts", [])
+    total = len(drafts)
+    approved = len([d for d in drafts if d.get("status") == "Approved"])
+    rejected = len([d for d in drafts if d.get("status") == "Rejected"])
+    pending = len([d for d in drafts if d.get("status") == "Awaiting approval"])
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📋 Total", total)
+    col2.metric("✅ Approved", approved)
+    col3.metric("❌ Rejected", rejected)
+    col4.metric("⏳ Pending", pending)
+
+with tab4:
+    st.header("⚙️ Settings")
+    st.write("### Workflow")
+    st.code("Google Trends → TrendPulse → Approval → YouTube")
+    st.write("### Format")
+    st.write("16:9 YouTube videos")
+    st.write("### Region")
+    st.write("South Africa (ZA)")
+    st.success("✅ App Ready!")
