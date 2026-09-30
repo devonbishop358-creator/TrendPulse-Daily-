@@ -6,7 +6,6 @@ import xml.etree.ElementTree as ET
 import subprocess
 import shutil
 from datetime import datetime
-import pickle
 
 st.set_page_config(page_title="TrendPulse Daily", page_icon="📈", layout="wide")
 
@@ -14,11 +13,9 @@ BASE_DIR = Path(__file__).resolve().parent
 DB = BASE_DIR / "trendpulse_data.json"
 VIDEO_DIR = BASE_DIR / "trendpulse_videos"
 AUDIO_DIR = BASE_DIR / "trendpulse_audio"
-CREDS_DIR = BASE_DIR / "creds"
 
 VIDEO_DIR.mkdir(exist_ok=True)
 AUDIO_DIR.mkdir(exist_ok=True)
-CREDS_DIR.mkdir(exist_ok=True)
 
 def load():
     if not DB.exists():
@@ -32,22 +29,14 @@ def load():
         data.setdefault("metrics", [])
         
         for draft in data["drafts"]:
-            if "topic" not in draft:
-                draft["topic"] = draft.get("title", "Untitled")
-            if "title" not in draft:
-                draft["title"] = draft["topic"]
-            if "script" not in draft:
-                draft["script"] = ""
-            if "status" not in draft:
-                draft["status"] = "Awaiting approval"
-            if "scheduled" not in draft:
-                draft["scheduled"] = "20:00 SAST"
-            if "created" not in draft:
-                draft["created"] = ""
-            if "audio" not in draft:
-                draft["audio"] = ""
-            if "video" not in draft:
-                draft["video"] = ""
+            draft.setdefault("topic", draft.get("title", "Untitled"))
+            draft.setdefault("title", draft["topic"])
+            draft.setdefault("script", "")
+            draft.setdefault("status", "Awaiting approval")
+            draft.setdefault("scheduled", "20:00 SAST")
+            draft.setdefault("created", "")
+            draft.setdefault("audio", "")
+            draft.setdefault("video", "")
         
         return data
     except Exception:
@@ -101,7 +90,7 @@ def create_draft(topic):
     for draft in data["drafts"]:
         try:
             ids.append(int(draft.get("id", 0)))
-        except Exception:
+        except:
             pass
     draft_id = max(ids) + 1 if ids else 1
     draft = {
@@ -162,7 +151,7 @@ def create_video(script, topic, audio_path, draft_id):
     try:
         if windows_font.exists():
             shutil.copyfile(windows_font, local_font)
-    except Exception:
+    except:
         pass
     
     relative_text = text_path.relative_to(BASE_DIR).as_posix()
@@ -172,18 +161,7 @@ def create_video(script, topic, audio_path, draft_id):
         relative_font = local_font.relative_to(BASE_DIR).as_posix()
         font_option = f"fontfile='{relative_font}':"
     
-    video_filter = (
-        "drawtext=" + font_option +
-        f"textfile='{relative_text}':" +
-        "fontcolor=white:" +
-        "fontsize=64:" +
-        "line_spacing=18:" +
-        "x=(w-text_w)/2:" +
-        "y=(h-text_h)/2:" +
-        "box=1:" +
-        "boxcolor=black@0.45:" +
-        "boxborderw=30"
-    )
+    video_filter = "drawtext=" + font_option + f"textfile='{relative_text}':fontcolor=white:fontsize=64:line_spacing=18:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.45:boxborderw=30"
     
     command = [
         "ffmpeg", "-y", "-f", "lavfi",
@@ -200,8 +178,20 @@ def create_video(script, topic, audio_path, draft_id):
     ]
     
     try:
-        result = subprocess.run(
-            command,
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True
+        result = subprocess.run(command, cwd=str(BASE_DIR), capture_output=True, text=True)
+        if result.returncode != 0:
+            st.error("FFmpeg error.")
+            return None
+        if not output_path.exists():
+            st.error("Video file not created.")
+            return None
+        return str(output_path)
+    except Exception as error:
+        st.error("Video creation failed.")
+        return None
+
+def generate_video(draft):
+    st.info("Creating voiceover...")
+    audio_path = create_voice(draft["script"], draft["id"])
+    if not audio_path:
+        return False
