@@ -37,14 +37,13 @@ def load():
         
         return data
     except Exception as e:
-        st.error(f"Error loading data: {e}")
         return {"drafts": [], "topics": []}
 
 def save(data):
     try:
         DB.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
-        st.error(f"Error saving data: {e}")
+        st.error(f"Error saving: {e}")
 
 data = load()
 
@@ -52,7 +51,6 @@ def get_trends():
     url = "https://trends.google.com/trending/rss?geo=ZA"
     try:
         response = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-        response.raise_for_status()
         root = ET.fromstring(response.content)
         topics = []
         for item in root.findall(".//item"):
@@ -60,8 +58,8 @@ def get_trends():
             if title:
                 topics.append(title.strip())
         return topics[:20]
-    except Exception as e:
-        st.error(f"Could not load Google Trends: {e}")
+    except Exception:
+        st.error("Could not load Google Trends.")
         return []
 
 def make_script(topic):
@@ -125,7 +123,7 @@ with tab1:
         for draft in reversed(data["drafts"]):
             st.divider()
             
-            topic = draft.get("topic", draft.get("title", "Untitled"))
+            topic = draft.get("topic", "Untitled")
             status = draft.get("status", "Awaiting approval")
             created = draft.get("created", "N/A")
             script = draft.get("script", "")
@@ -140,66 +138,71 @@ with tab1:
             if status == "Awaiting approval":
                 col1, col2 = st.columns(2)
                 
-                if col1.button("✅ APPROVE TOPIC", key=f"approve_{draft['id']}"):
+                if col1.button("✅ APPROVE", key=f"approve_{draft['id']}"):
                     draft["status"] = "Approved"
                     save(data)
-                    st.success("Topic approved!")
+                    st.success("Approved!")
                     st.rerun()
                 
                 if col2.button("❌ REJECT", key=f"reject_{draft['id']}"):
                     draft["status"] = "Rejected"
                     save(data)
-                    st.warning("Topic rejected!")
+                    st.warning("Rejected!")
                     st.rerun()
             
             elif status == "Approved":
-                st.success("✅ This topic has been approved!")
-            
+                st.success("✅ Approved!")
             elif status == "Rejected":
-                st.error("❌ This topic was rejected!")
+                st.error("❌ Rejected!")
 
 with tab2:
     st.header("🇿🇦 South Africa Google Trends")
-    st.write("Import the latest trending searches from Google Trends into your Approval Queue.")
     
     if st.button("🔄 REFRESH GOOGLE TRENDS"):
-        with st.spinner("Fetching trends..."):
-            trends = get_trends()
-            if trends:
-                data["topics"] = trends
-                save(data)
-                st.success(f"✅ Found {len(trends)} trending topics!")
-            else:
-                st.warning("⚠️ No trends found. Try again.")
+        trends = get_trends()
+        if trends:
+            data["topics"] = trends
+            save(data)
+            st.success(f"Found {len(trends)} trends!")
         st.rerun()
     
     trends = data.get("topics", [])
     
     if trends:
-        st.subheader("📊 Select a Topic")
-        selected_topic = st.selectbox("Choose a trend to create a draft", trends, key="trend_select")
-        
-        if st.button("📝 CREATE VIDEO DRAFT"):
-            create_draft(selected_topic)
-            st.success(f"✅ Draft created for: {selected_topic}")
+        selected = st.selectbox("Choose a topic", trends)
+        if st.button("CREATE DRAFT"):
+            create_draft(selected)
+            st.success("Draft created!")
             st.rerun()
         
-        st.subheader("Current Trending Topics")
+        st.subheader("Current Trends")
         for i, topic in enumerate(trends, 1):
             st.write(f"{i}. {topic}")
     else:
-        st.info("Click 'REFRESH GOOGLE TRENDS' to load today's topics.")
+        st.info("Click refresh to load trends.")
 
 with tab3:
     st.header("📊 Analytics")
     
     drafts = data.get("drafts", [])
-    
-    total_drafts = len(drafts)
+    total = len(drafts)
     approved = len([d for d in drafts if d.get("status") == "Approved"])
     rejected = len([d for d in drafts if d.get("status") == "Rejected"])
     pending = len([d for d in drafts if d.get("status") == "Awaiting approval"])
     
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("📋 Total Drafts", total_drafts)
-    col2.metric("
+    col1.metric("Drafts", total)
+    col2.metric("Approved", approved)
+    col3.metric("Rejected", rejected)
+    col4.metric("Pending", pending)
+
+with tab4:
+    st.header("Settings")
+    st.write("### Current Workflow")
+    st.code("Google Trends → TrendPulse → Approval → YouTube")
+    st.write("### Video Format")
+    st.write("16:9 YouTube videos (3-6 minutes)")
+    st.write("### Region")
+    st.write("South Africa (ZA)")
+    st.write("### Status")
+    st.success("✅ App Ready!")
