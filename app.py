@@ -4,6 +4,7 @@ import json
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime
+import pickle
 
 st.set_page_config(page_title="TrendPulse Daily", page_icon="📈", layout="wide")
 
@@ -11,9 +12,11 @@ BASE_DIR = Path(__file__).resolve().parent
 DB = BASE_DIR / "trendpulse_data.json"
 VIDEO_DIR = BASE_DIR / "trendpulse_videos"
 AUDIO_DIR = BASE_DIR / "trendpulse_audio"
+CREDS_DIR = BASE_DIR / "creds"
 
 VIDEO_DIR.mkdir(exist_ok=True)
 AUDIO_DIR.mkdir(exist_ok=True)
+CREDS_DIR.mkdir(exist_ok=True)
 
 def load():
     if not DB.exists():
@@ -34,9 +37,11 @@ def load():
             draft.setdefault("created", "")
             draft.setdefault("audio", "")
             draft.setdefault("video", "")
+            draft.setdefault("youtube_url", "")
+            draft.setdefault("youtube_video_id", "")
         
         return data
-    except Exception as e:
+    except Exception:
         return {"drafts": [], "topics": []}
 
 def save(data):
@@ -103,10 +108,95 @@ def create_draft(topic):
         "status": "Awaiting approval",
         "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "audio": "",
-        "video": ""
+        "video": "",
+        "youtube_url": "",
+        "youtube_video_id": ""
     }
     data["drafts"].append(draft)
     save(data)
+
+def authenticate_youtube():
+    """Authenticate with YouTube API"""
+    try:
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
+    except ImportError:
+        st.error("Missing YouTube dependencies")
+        st.info("Run: pip install google-auth-oauthlib google-auth-httplib2 google-api-python-client")
+        return None
+    
+    SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+    TOKEN_FILE = CREDS_DIR / 'youtube_token.pickle'
+    CREDENTIALS_FILE = CREDS_DIR / 'youtube_credentials.json'
+
+    creds = None
+
+    if TOKEN_FILE.exists():
+        with open(TOKEN_FILE, 'rb') as token:
+            creds = pickle.load(token)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            if not CREDENTIALS_FILE.exists():
+                st.error("YouTube credentials.json not found!")
+                st.info("Get it from: https://console.cloud.google.com")
+                return None
+
+            try:
+                flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+                creds = flow.run_local_server(port=0)
+            except Exception as e:
+                st.error(f"Auth error: {e}")
+                return None
+
+        with open(TOKEN_FILE, 'wb') as token:
+            pickle.dump(creds, token)
+
+    return creds
+
+def upload_to_youtube(video_path, title, description, tags):
+    """Upload video to YouTube"""
+    try:
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaFileUpload
+
+        creds = authenticate_youtube()
+        if not creds:
+            return None, "YouTube authentication failed"
+
+        youtube = build('youtube', 'v3', credentials=creds)
+
+        body = {
+            'snippet': {
+                'title': title,
+                'description': description,
+                'tags': tags,
+                'categoryId': '25'
+            },
+            'status': {
+                'privacyStatus': 'public'
+            }
+        }
+
+        media = MediaFileUpload(video_path, mimetype='video/mp4', resumable=True)
+
+        insert_request = youtube.videos().insert(
+            part='snippet,status',
+            body=body,
+            media_body=media
+        )
+
+        response = None
+        while response is None:
+            status, response = insert_request.next_chunk()
+
+        video_id = response['id']
+        return video_id, f"https://www.youtube.com/watch?v={video_id}"
+
+    except Exception as e:
+        return None, f"Upload failed: {str(e)}"
 
 st.title("📈 TrendPulse Daily")
 st.caption("Daily trend discovery and approval workflow")
@@ -124,85 +214,4 @@ with tab1:
             st.divider()
             
             topic = draft.get("topic", "Untitled")
-            status = draft.get("status", "Awaiting approval")
-            created = draft.get("created", "N/A")
-            script = draft.get("script", "")
-            
-            st.subheader(topic)
-            st.write(f"**Status:** {status}")
-            st.write(f"**Created:** {created}")
-            
-            st.markdown("### 📝 Script")
-            st.text_area("Video script", script, height=150, key=f"script_{draft['id']}", disabled=True)
-            
-            if status == "Awaiting approval":
-                col1, col2 = st.columns(2)
-                
-                if col1.button("✅ APPROVE", key=f"approve_{draft['id']}"):
-                    draft["status"] = "Approved"
-                    save(data)
-                    st.success("Approved!")
-                    st.rerun()
-                
-                if col2.button("❌ REJECT", key=f"reject_{draft['id']}"):
-                    draft["status"] = "Rejected"
-                    save(data)
-                    st.warning("Rejected!")
-                    st.rerun()
-            
-            elif status == "Approved":
-                st.success("✅ Approved!")
-            elif status == "Rejected":
-                st.error("❌ Rejected!")
-
-with tab2:
-    st.header("🇿🇦 South Africa Google Trends")
-    
-    if st.button("🔄 REFRESH GOOGLE TRENDS"):
-        trends = get_trends()
-        if trends:
-            data["topics"] = trends
-            save(data)
-            st.success(f"Found {len(trends)} trends!")
-        st.rerun()
-    
-    trends = data.get("topics", [])
-    
-    if trends:
-        selected = st.selectbox("Choose a topic", trends)
-        if st.button("CREATE DRAFT"):
-            create_draft(selected)
-            st.success("Draft created!")
-            st.rerun()
-        
-        st.subheader("Current Trends")
-        for i, topic in enumerate(trends, 1):
-            st.write(f"{i}. {topic}")
-    else:
-        st.info("Click refresh to load trends.")
-
-with tab3:
-    st.header("📊 Analytics")
-    
-    drafts = data.get("drafts", [])
-    total = len(drafts)
-    approved = len([d for d in drafts if d.get("status") == "Approved"])
-    rejected = len([d for d in drafts if d.get("status") == "Rejected"])
-    pending = len([d for d in drafts if d.get("status") == "Awaiting approval"])
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Drafts", total)
-    col2.metric("Approved", approved)
-    col3.metric("Rejected", rejected)
-    col4.metric("Pending", pending)
-
-with tab4:
-    st.header("Settings")
-    st.write("### Current Workflow")
-    st.code("Google Trends → TrendPulse → Approval → YouTube")
-    st.write("### Video Format")
-    st.write("16:9 YouTube videos (3-6 minutes)")
-    st.write("### Region")
-    st.write("South Africa (ZA)")
-    st.write("### Status")
-    st.success("✅ App Ready!")
+            status = draft.get("status",
