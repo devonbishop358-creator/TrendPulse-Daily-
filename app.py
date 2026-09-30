@@ -119,8 +119,37 @@ with tab1:
                     save(data)
                     st.warning("Rejected!")
                     st.rerun()
+            
             elif status == "Approved":
                 st.success("✅ Approved!")
+                
+                st.divider()
+                st.subheader("🎥 Video Generation")
+                st.write("Video creation requires FFmpeg and Python speech synthesis.")
+                st.info("For now, you can manually create videos or integrate video generation tools.")
+                
+                st.divider()
+                st.subheader("🚀 YouTube Upload")
+                st.write("Upload this video to your YouTube channel.")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    yt_title = st.text_input("YouTube Title", value=topic, key=f"yt_title_{draft['id']}")
+                
+                with col2:
+                    yt_tags = st.text_input("Tags (comma-separated)", value="trending,south africa,news", key=f"yt_tags_{draft['id']}")
+                
+                yt_desc = st.text_area(
+                    "YouTube Description",
+                    value=f"Trending in South Africa: {topic}\n\nSubscribe for daily trending updates from TrendPulse Daily!",
+                    height=100,
+                    key=f"yt_desc_{draft['id']}"
+                )
+                
+                st.info("📌 Note: YouTube upload requires OAuth credentials. Set up in Settings tab.")
+                st.button("🎬 UPLOAD TO YOUTUBE", key=f"upload_{draft['id']}", disabled=True)
+                
             elif status == "Rejected":
                 st.error("❌ Rejected!")
 
@@ -151,25 +180,4 @@ with tab2:
         st.info("Click refresh to load trends.")
 
 with tab3:
-    st.header("📊 Analytics")
-    drafts = data.get("drafts", [])
-    total = len(drafts)
-    approved = len([d for d in drafts if d.get("status") == "Approved"])
-    rejected = len([d for d in drafts if d.get("status") == "Rejected"])
-    pending = len([d for d in drafts if d.get("status") == "Awaiting approval"])
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("📋 Total", total)
-    col2.metric("✅ Approved", approved)
-    col3.metric("❌ Rejected", rejected)
-    col4.metric("⏳ Pending", pending)
-
-with tab4:
-    st.header("⚙️ Settings")
-    st.write("### Workflow")
-    st.code("Google Trends → TrendPulse → Approval → YouTube")
-    st.write("### Format")
-    st.write("16:9 YouTube videos")
-    st.write("### Region")
-    st.write("South Africa (ZA)")
-    st.success("✅ App Ready!")
+    st.
