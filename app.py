@@ -71,7 +71,7 @@ def get_trends():
             if title:
                 topics.append(title.strip())
         return topics[:20]
-    except Exception as error:
+    except Exception:
         st.error("Could not load Google Trends.")
         return []
 
@@ -205,4 +205,3 @@ def create_video(script, topic, audio_path, draft_id):
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True
-        )
