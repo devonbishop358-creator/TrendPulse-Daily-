@@ -26,8 +26,8 @@ def load():
         data.setdefault("topics", [])
         for draft in data["drafts"]:
             draft.setdefault("id", 0)
-            draft.setdefault("topic", draft.get("title", "Untitled"))
-            draft.setdefault("title", draft.get("topic", "Untitled"))
+            draft.setdefault("topic", "Untitled")
+            draft.setdefault("title", "Untitled")
             draft.setdefault("script", "")
             draft.setdefault("status", "Awaiting approval")
             draft.setdefault("created", "")
@@ -104,6 +104,7 @@ with tab1:
             st.subheader(topic)
             st.write(f"**Status:** {status}")
             st.write(f"**Created:** {created}")
+            
             st.markdown("### 📝 Script")
             st.text_area("Video script", script, height=150, key=f"script_{draft['id']}", disabled=True)
             
@@ -122,40 +123,23 @@ with tab1:
             
             elif status == "Approved":
                 st.success("✅ Approved!")
-                
                 st.divider()
                 st.subheader("🎥 Video Generation")
-                st.write("Video creation requires FFmpeg and Python speech synthesis.")
-                st.info("For now, you can manually create videos or integrate video generation tools.")
+                st.info("Video generation coming soon!")
                 
                 st.divider()
                 st.subheader("🚀 YouTube Upload")
-                st.write("Upload this video to your YouTube channel.")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    yt_title = st.text_input("YouTube Title", value=topic, key=f"yt_title_{draft['id']}")
-                
-                with col2:
-                    yt_tags = st.text_input("Tags (comma-separated)", value="trending,south africa,news", key=f"yt_tags_{draft['id']}")
-                
-                yt_desc = st.text_area(
-                    "YouTube Description",
-                    value=f"Trending in South Africa: {topic}\n\nSubscribe for daily trending updates from TrendPulse Daily!",
-                    height=100,
-                    key=f"yt_desc_{draft['id']}"
-                )
-                
-                st.info("📌 Note: YouTube upload requires OAuth credentials. Set up in Settings tab.")
-                st.button("🎬 UPLOAD TO YOUTUBE", key=f"upload_{draft['id']}", disabled=True)
-                
+                yt_title = st.text_input("YouTube Title", value=topic, key=f"yt_title_{draft['id']}")
+                yt_desc = st.text_area("YouTube Description", value=f"Trending in South Africa: {topic}\n\nSubscribe for daily updates!", height=80, key=f"yt_desc_{draft['id']}")
+                yt_tags = st.text_input("Tags", value="trending,south africa,news", key=f"yt_tags_{draft['id']}")
+                st.button("🎬 Upload to YouTube", key=f"upload_{draft['id']}", disabled=True)
+                st.info("YouTube upload coming soon!")
+            
             elif status == "Rejected":
                 st.error("❌ Rejected!")
 
 with tab2:
     st.header("🇿🇦 South Africa Google Trends")
-    st.write("Import the latest trending searches from Google Trends.")
     
     if st.button("🔄 REFRESH GOOGLE TRENDS"):
         trends = get_trends()
@@ -180,4 +164,19 @@ with tab2:
         st.info("Click refresh to load trends.")
 
 with tab3:
-    st.
+    st.header("📊 Analytics")
+    drafts = data.get("drafts", [])
+    total = len(drafts)
+    approved = len([d for d in drafts if d.get("status") == "Approved"])
+    rejected = len([d for d in drafts if d.get("status") == "Rejected"])
+    pending = len([d for d in drafts if d.get("status") == "Awaiting approval"])
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📋 Total", total)
+    col2.metric("✅ Approved", approved)
+    col3.metric("❌ Rejected", rejected)
+    col4.metric("⏳ Pending", pending)
+
+with tab4:
+    st.header("⚙️ Settings")
+    st.write("### Workflow")
