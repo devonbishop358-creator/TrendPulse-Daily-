@@ -3,8 +3,6 @@ from pathlib import Path
 import json
 import requests
 import xml.etree.ElementTree as ET
-import subprocess
-import shutil
 from datetime import datetime
 
 st.set_page_config(page_title="TrendPulse Daily", page_icon="📈", layout="wide")
@@ -19,79 +17,32 @@ AUDIO_DIR.mkdir(exist_ok=True)
 
 def load():
     if not DB.exists():
-        return {"drafts": [], "topics": [], "metrics": []}
+        return {"drafts": [], "topics": []}
     try:
-        data = json.loads(DB.read_text(encoding="utf-8-sig"))
-        if not isinstance(data, dict):
-            data = {}
-        data.setdefault("drafts", [])
-        data.setdefault("topics", [])
-        data.setdefault("metrics", [])
-        
-        for draft in data["drafts"]:
-            draft.setdefault("topic", draft.get("title", "Untitled"))
-            draft.setdefault("title", draft["topic"])
-            draft.setdefault("script", "")
-            draft.setdefault("status", "Awaiting approval")
-            draft.setdefault("scheduled", "20:00 SAST")
-            draft.setdefault("created", "")
-            draft.setdefault("audio", "")
-            draft.setdefault("video", "")
-        
-        return data
-    except Exception:
-        return {"drafts": [], "topics": [], "metrics": []}
+        return json.loads(DB.read_text(encoding="utf-8-sig"))
+    except:
+        return {"drafts": [], "topics": []}
 
 def save(data):
     DB.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 data = load()
-save(data)
 
 def get_trends():
     url = "https://trends.google.com/trending/rss?geo=ZA"
     try:
         response = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-        response.raise_for_status()
         root = ET.fromstring(response.content)
-        topics = []
-        for item in root.findall(".//item"):
-            title = item.findtext("title")
-            if title:
-                topics.append(title.strip())
+        topics = [item.findtext("title") for item in root.findall(".//item") if item.findtext("title")]
         return topics[:20]
-    except Exception:
-        st.error("Could not load Google Trends.")
+    except:
         return []
 
 def make_script(topic):
-    return f"""Welcome to TrendPulse Daily.
-
-Today's trending topic is {topic}.
-
-This topic is currently receiving search interest from people in South Africa.
-
-In this video, we look at what people are searching for and why this topic is receiving attention.
-
-Search trends can change quickly.
-
-Trending searches show what people are looking for, but they do not automatically confirm that every claim or report surrounding a topic is true.
-
-For important developments, viewers should always check reliable and confirmed information.
-
-We will continue monitoring this topic and provide updates when reliable information becomes available.
-
-That is today's TrendPulse Daily update.
-
-Subscribe to TrendPulse Daily for more daily trending topics from South Africa."""
+    return f"Welcome to TrendPulse Daily. Today's trending topic is {topic}. This is currently trending in South Africa. Subscribe for daily updates!"
 
 def create_draft(topic):
-    ids = []
-    for draft in data["drafts"]:
-        try:
-            ids.append(int(draft.get("id", 0)))
-        except:
-            pass
+    ids = [int(d.get("id", 0)) for d in data["drafts"] if d.get("id")]
     draft_id = max(ids) + 1 if ids else 1
     draft = {
         "id": draft_id,
@@ -100,98 +51,76 @@ def create_draft(topic):
         "script": make_script(topic),
         "status": "Awaiting approval",
         "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "scheduled": "20:00 SAST",
         "audio": "",
         "video": ""
     }
     data["drafts"].append(draft)
     save(data)
 
-def create_voice(script, draft_id):
-    audio_path = AUDIO_DIR / f"trendpulse_{draft_id}.wav"
-    text_path = AUDIO_DIR / f"trendpulse_{draft_id}.txt"
-    text_path.write_text(script, encoding="utf-8")
-    
-    powershell_script = f"""
-Add-Type -AssemblyName System.Speech
-$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer
-$speaker.Rate = 0
-$speaker.Volume = 100
-$speaker.SetOutputToWaveFile("{audio_path}")
-$text = Get-Content -Raw -Encoding UTF8 "{text_path}"
-$speaker.Speak($text)
-$speaker.Dispose()
-"""
-    
-    try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", powershell_script],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr)
-        if not audio_path.exists():
-            raise RuntimeError("Voiceover file was not created.")
-        return str(audio_path)
-    except Exception as error:
-        st.error("Voiceover creation failed.")
-        return None
+st.title("📈 TrendPulse Daily")
+st.caption("Daily trend discovery and approval workflow")
 
-def create_video(script, topic, audio_path, draft_id):
-    output_path = VIDEO_DIR / f"trendpulse_draft_{draft_id}.mp4"
-    text_path = VIDEO_DIR / f"trendpulse_text_{draft_id}.txt"
-    
-    screen_text = topic + "\n\nTRENDING IN SOUTH AFRICA\n\nTrendPulse Daily"
-    text_path.write_text(screen_text, encoding="utf-8")
-    
-    windows_font = Path("C:/Windows/Fonts/arial.ttf")
-    local_font = VIDEO_DIR / "arial.ttf"
-    
-    try:
-        if windows_font.exists():
-            shutil.copyfile(windows_font, local_font)
-    except:
-        pass
-    
-    relative_text = text_path.relative_to(BASE_DIR).as_posix()
-    
-    font_option = ""
-    if local_font.exists():
-        relative_font = local_font.relative_to(BASE_DIR).as_posix()
-        font_option = f"fontfile='{relative_font}':"
-    
-    video_filter = "drawtext=" + font_option + f"textfile='{relative_text}':fontcolor=white:fontsize=64:line_spacing=18:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.45:boxborderw=30"
-    
-    command = [
-        "ffmpeg", "-y", "-f", "lavfi",
-        "-i", "color=c=0x16213E:s=1920x1080:r=30",
-        "-i", audio_path,
-        "-vf", video_filter,
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-shortest",
-        str(output_path)
-    ]
-    
-    try:
-        result = subprocess.run(command, cwd=str(BASE_DIR), capture_output=True, text=True)
-        if result.returncode != 0:
-            st.error("FFmpeg error.")
-            return None
-        if not output_path.exists():
-            st.error("Video file not created.")
-            return None
-        return str(output_path)
-    except Exception as error:
-        st.error("Video creation failed.")
-        return None
+tab1, tab2, tab3, tab4 = st.tabs(["Approval Queue", "Trends", "Analytics", "Settings"])
 
-def generate_video(draft):
-    st.info("Creating voiceover...")
-    audio_path = create_voice(draft["script"], draft["id"])
-    if not audio_path:
-        return False
+with tab1:
+    st.header("Approval Queue")
+    if not data["drafts"]:
+        st.info("No drafts waiting for approval.")
+    else:
+        for draft in reversed(data["drafts"]):
+            st.divider()
+            st.subheader(draft["topic"])
+            st.write("Status:", draft["status"])
+            st.write("Created:", draft["created"])
+            
+            col1, col2 = st.columns(2)
+            if col1.button("APPROVE", key=f"approve_{draft['id']}"):
+                draft["status"] = "Approved"
+                save(data)
+                st.success("Approved!")
+                st.rerun()
+            if col2.button("REJECT", key=f"reject_{draft['id']}"):
+                draft["status"] = "Rejected"
+                save(data)
+                st.warning("Rejected!")
+                st.rerun()
+
+with tab2:
+    st.header("🇿🇦 South Africa Google Trends")
+    if st.button("REFRESH GOOGLE TRENDS"):
+        trends = get_trends()
+        data["topics"] = trends
+        save(data)
+        st.success(f"Found {len(trends)} trends!")
+        st.rerun()
+    
+    trends = data.get("topics", [])
+    if trends:
+        selected = st.selectbox("Choose a topic", trends)
+        if st.button("CREATE DRAFT"):
+            create_draft(selected)
+            st.success("Draft created!")
+            st.rerun()
+        
+        st.subheader("Current Trends")
+        for i, topic in enumerate(trends, 1):
+            st.write(f"{i}. {topic}")
+    else:
+        st.info("Click REFRESH to load trends.")
+
+with tab3:
+    st.header("📊 Analytics")
+    drafts = data.get("drafts", [])
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Drafts", len(drafts))
+    col2.metric("Approved", len([d for d in drafts if d.get("status") == "Approved"]))
+    col3.metric("Rejected", len([d for d in drafts if d.get("status") == "Rejected"]))
+    col4.metric("Pending", len([d for d in drafts if d.get("status") == "Awaiting approval"]))
+
+with tab4:
+    st.header("Settings")
+    st.write("**Workflow:**")
+    st.code("Google Trends → TrendPulse → Approval → YouTube")
+    st.write("**Format:** 16:9 YouTube videos")
+    st.write("**Region:** South Africa (ZA)")
+    st.success("✅ App is ready!")
