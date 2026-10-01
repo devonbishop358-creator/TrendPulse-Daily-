@@ -4,6 +4,10 @@ import json
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime
+import subprocess
+import pyttsx3
+from PIL import Image, ImageDraw, ImageFont
+import os
 
 st.set_page_config(page_title="TrendPulse Daily", page_icon="📈", layout="wide")
 
@@ -11,9 +15,11 @@ BASE_DIR = Path(__file__).resolve().parent
 DB = BASE_DIR / "trendpulse_data.json"
 VIDEO_DIR = BASE_DIR / "trendpulse_videos"
 AUDIO_DIR = BASE_DIR / "trendpulse_audio"
+IMG_DIR = BASE_DIR / "trendpulse_images"
 
 VIDEO_DIR.mkdir(exist_ok=True)
 AUDIO_DIR.mkdir(exist_ok=True)
+IMG_DIR.mkdir(exist_ok=True)
 
 def load():
     if not DB.exists():
@@ -33,6 +39,7 @@ def load():
             draft.setdefault("created", "")
             draft.setdefault("audio", "")
             draft.setdefault("video", "")
+            draft.setdefault("youtube_url", "")
         return data
     except Exception:
         return {"drafts": [], "topics": []}
@@ -77,106 +84,88 @@ def create_draft(topic):
         "status": "Awaiting approval",
         "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "audio": "",
-        "video": ""
+        "video": "",
+        "youtube_url": ""
     }
     data["drafts"].append(draft)
     save(data)
 
+def create_voiceover(script, draft_id):
+    try:
+        audio_path = AUDIO_DIR / f"trendpulse_{draft_id}.wav"
+        engine = pyttsx3.init()
+        engine.setProperty('rate', 150)
+        engine.setProperty('volume', 0.9)
+        engine.save_to_file(script, str(audio_path))
+        engine.runAndWait()
+        if audio_path.exists():
+            return str(audio_path)
+        else:
+            st.error("Audio file not created")
+            return None
+    except Exception as e:
+        st.error(f"Voiceover creation failed: {str(e)}")
+        return None
+
+def create_video(topic, audio_path, draft_id):
+    try:
+        if not Path(audio_path).exists():
+            st.error("Audio file not found")
+            return None
+        video_path = VIDEO_DIR / f"trendpulse_{draft_id}.mp4"
+        img_path = IMG_DIR / f"trendpulse_{draft_id}.png"
+        img = Image.new('RGB', (1920, 1080), color=(22, 33, 62))
+        draw = ImageDraw.Draw(img)
+        try:
+            font_size = 80
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
+        text = topic
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        x = (1920 - text_width) // 2
+        y = (1080 - text_height) // 2
+        draw.text((x, y), text, fill=(255, 255, 255), font=font)
+        draw.text((x, y + 150), "TRENDING IN SOUTH AFRICA", fill=(150, 150, 150), font=font)
+        draw.text((x, y + 300), "TrendPulse Daily", fill=(100, 200, 255), font=font)
+        img.save(str(img_path))
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-loop", "1",
+            "-i", str(img_path),
+            "-i", audio_path,
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+            str(video_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0 and video_path.exists():
+            return str(video_path)
+        else:
+            st.error("FFmpeg error - install FFmpeg from ffmpeg.org")
+            return None
+    except Exception as e:
+        st.error(f"Video creation failed: {str(e)}")
+        return None
+
 st.title("📈 TrendPulse Daily")
-st.caption("Daily trend discovery and approval workflow")
+st.caption("Daily trend discovery and YouTube monetization")
 
 tab1, tab2, tab3, tab4 = st.tabs(["Approval Queue", "Trends", "Analytics", "Settings"])
 
 with tab1:
     st.header("Approval Queue")
     st.info("Nothing publishes without your approval.")
-    
     if not data["drafts"]:
         st.info("No drafts are waiting for approval.")
     else:
         for draft in reversed(data["drafts"]):
             st.divider()
             topic = draft.get("topic", "Untitled")
-            status = draft.get("status", "Awaiting approval")
-            created = draft.get("created", "N/A")
-            script = draft.get("script", "")
-            
-            st.subheader(topic)
-            st.write(f"**Status:** {status}")
-            st.write(f"**Created:** {created}")
-            
-            st.markdown("### 📝 Script")
-            st.text_area("Video script", script, height=150, key=f"script_{draft['id']}", disabled=True)
-            
-            if status == "Awaiting approval":
-                col1, col2 = st.columns(2)
-                if col1.button("✅ APPROVE", key=f"approve_{draft['id']}"):
-                    draft["status"] = "Approved"
-                    save(data)
-                    st.success("Approved!")
-                    st.rerun()
-                if col2.button("❌ REJECT", key=f"reject_{draft['id']}"):
-                    draft["status"] = "Rejected"
-                    save(data)
-                    st.warning("Rejected!")
-                    st.rerun()
-            
-            elif status == "Approved":
-                st.success("✅ Approved!")
-                st.divider()
-                st.subheader("🎥 Video Generation")
-                st.info("Video generation coming soon!")
-                
-                st.divider()
-                st.subheader("🚀 YouTube Upload")
-                yt_title = st.text_input("YouTube Title", value=topic, key=f"yt_title_{draft['id']}")
-                yt_desc = st.text_area("YouTube Description", value=f"Trending in South Africa: {topic}\n\nSubscribe for daily updates!", height=80, key=f"yt_desc_{draft['id']}")
-                yt_tags = st.text_input("Tags", value="trending,south africa,news", key=f"yt_tags_{draft['id']}")
-                st.button("🎬 Upload to YouTube", key=f"upload_{draft['id']}", disabled=True)
-                st.info("YouTube upload coming soon!")
-            
-            elif status == "Rejected":
-                st.error("❌ Rejected!")
-
-with tab2:
-    st.header("🇿🇦 South Africa Google Trends")
-    
-    if st.button("🔄 REFRESH GOOGLE TRENDS"):
-        trends = get_trends()
-        if trends:
-            data["topics"] = trends
-            save(data)
-            st.success(f"Found {len(trends)} trends!")
-        st.rerun()
-    
-    trends = data.get("topics", [])
-    
-    if trends:
-        selected = st.selectbox("Choose a topic", trends)
-        if st.button("📝 CREATE DRAFT"):
-            create_draft(selected)
-            st.success("Draft created!")
-            st.rerun()
-        st.subheader("Current Trends")
-        for i, topic in enumerate(trends, 1):
-            st.write(f"{i}. {topic}")
-    else:
-        st.info("Click refresh to load trends.")
-
-with tab3:
-    st.header("📊 Analytics")
-    drafts = data.get("drafts", [])
-    total = len(drafts)
-    approved = len([d for d in drafts if d.get("status") == "Approved"])
-    rejected = len([d for d in drafts if d.get("status") == "Rejected"])
-    pending = len([d for d in drafts if d.get("status") == "Awaiting approval"])
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("📋 Total", total)
-    col2.metric("✅ Approved", approved)
-    col3.metric("❌ Rejected", rejected)
-    col4.metric("⏳ Pending", pending)
-
-with tab4:
-    st.header("⚙️ Settings")
-    st.write("### Workflow")
