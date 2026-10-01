@@ -40,21 +40,19 @@ def get_trends():
         topics = [item.findtext("title") for item in root.findall(".//item") if item.findtext("title")]
         return topics[:20]
     except:
-        st.error("Could not load trends")
         return []
 
 def make_script(topic):
-    return f"Welcome to TrendPulse Daily. Today's trending topic is {topic}. This is trending in South Africa. Subscribe for daily updates!"
+    return f"Welcome to TrendPulse Daily. Today trending: {topic}. Subscribe!"
 
 def create_draft(topic):
     ids = [int(d.get("id", 0)) for d in data["drafts"] if d.get("id")]
     new_id = max(ids) + 1 if ids else 1
-    draft = {"id": new_id, "topic": topic, "title": topic, "script": make_script(topic), "status": "Awaiting approval", "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "audio": "", "video": ""}
+    draft = {"id": new_id, "topic": topic, "script": make_script(topic), "status": "Awaiting approval", "created": datetime.now().strftime("%Y-%m-%d"), "audio": ""}
     data["drafts"].append(draft)
     save(data)
 
 st.title("📈 TrendPulse Daily")
-st.caption("Daily trend discovery and YouTube monetization")
 
 tab1, tab2, tab3, tab4 = st.tabs(["Queue", "Trends", "Analytics", "Settings"])
 
@@ -65,65 +63,44 @@ with tab1:
     else:
         for draft in reversed(data["drafts"]):
             st.divider()
-            st.subheader(draft.get("topic", "Untitled"))
+            st.subheader(draft.get("topic"))
             st.write(f"Status: {draft.get('status')}")
-            st.text_area("Script", draft.get("script", ""), disabled=True, key=f"s_{draft['id']}")
-            
+            st.text_area("Script", draft.get("script"), disabled=True, key=f"s_{draft['id']}")
             if draft.get("status") == "Awaiting approval":
-                c1, c2 = st.columns(2)
-                if c1.button("✅ APPROVE", key=f"a_{draft['id']}"):
+                col1, col2 = st.columns(2)
+                if col1.button("APPROVE", key=f"a_{draft['id']}"):
                     draft["status"] = "Approved"
                     save(data)
                     st.rerun()
-                if c2.button("❌ REJECT", key=f"r_{draft['id']}"):
+                if col2.button("REJECT", key=f"r_{draft['id']}"):
                     draft["status"] = "Rejected"
                     save(data)
                     st.rerun()
             elif draft.get("status") == "Approved":
-                st.success("✅ Approved")
-                if st.button("🎤 Voiceover", key=f"v_{draft['id']}"):
-                    try:
-                        audio_path = AUDIO_DIR / f"trendpulse_{draft['id']}.wav"
-                        engine = pyttsx3.init()
-                        engine.setProperty('rate', 150)
-                        engine.save_to_file(draft.get("script", ""), str(audio_path))
-                        engine.runAndWait()
-                        if audio_path.exists():
-                            draft["audio"] = str(audio_path)
-                            save(data)
-                            st.success("Done!")
-                            st.audio(str(audio_path))
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+                st.success("Approved")
 
 with tab2:
-    st.header("Google Trends SA")
-    if st.button("🔄 Refresh"):
+    st.header("Google Trends")
+    if st.button("Refresh"):
         trends = get_trends()
         if trends:
             data["topics"] = trends
             save(data)
-            st.success(f"Found {len(trends)}")
         st.rerun()
-    
     if data.get("topics"):
-        selected = st.selectbox("Pick a topic", data["topics"])
+        sel = st.selectbox("Topic", data["topics"])
         if st.button("Create Draft"):
-            create_draft(selected)
+            create_draft(sel)
             st.rerun()
-        for i, t in enumerate(data["topics"], 1):
-            st.write(f"{i}. {t}")
 
 with tab3:
     st.header("Analytics")
     drafts = data.get("drafts", [])
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total", len(drafts))
-    c2.metric("Approved", len([d for d in drafts if d.get("status") == "Approved"]))
-    c3.metric("Rejected", len([d for d in drafts if d.get("status") == "Rejected"]))
-    c4.metric("Pending", len([d for d in drafts if d.get("status") == "Awaiting approval"]))
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total", len(drafts))
+    col2.metric("Approved", len([d for d in drafts if d.get("status") == "Approved"]))
+    col3.metric("Pending", len([d for d in drafts if d.get("status") == "Awaiting approval"]))
 
 with tab4:
     st.header("Settings")
-    st.write("Workflow: Trends → Draft → Approve → Voiceover → Video → YouTube")
-    st.success("App Ready!")
+    st.write("TrendPulse Daily is ready!")
